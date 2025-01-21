@@ -16,27 +16,25 @@ uploadButton.addEventListener('click', async () => {
     }
 });
 
-
 separateButton.addEventListener('click', async () => {
-   if (!audioFilePath) {
-      messageDisplay.textContent = 'Please select an audio file first.';
-      return;
-   }
+    if (!audioFilePath) {
+        messageDisplay.textContent = 'Please select an audio file first.';
+        return;
+    }
 
-   try {
-      messageDisplay.textContent = 'Separating stems...';
-      const result = await window.electronAPI.separateStems(audioFilePath);
+    try {
+        messageDisplay.textContent = 'Separating stems...';
+        const result = await window.electronAPI.separateStems(audioFilePath);
 
-       if (result.status === 'success'){
+        if (result && result.status === 'success') {
             messageDisplay.textContent = 'Stems separated and saved.';
             localStorage.setItem('stems', JSON.stringify(result.stems));
-             window.location.href = 'spatial.html';
-       } else {
-             messageDisplay.textContent = 'Error: Stems not separated.';
-       }
-
-   } catch (error) {
-       console.error(error)
-       messageDisplay.textContent = `Error separating stems. Check console for details: ${error}`
-   }
- });
+            window.location.href = 'spatial.html';
+        } else {
+            messageDisplay.textContent = 'Error: Stems not separated.';
+        }
+    } catch (error) {
+        console.error(error);
+        messageDisplay.textContent = `Error separating stems. Check console for details: ${error.toString().substring(0,200)}...`;
+    }
+});

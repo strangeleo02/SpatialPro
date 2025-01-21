@@ -1,20 +1,21 @@
 <!DOCTYPE html>
-<html>
+<html lang="en">
 <head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
     <title>Spatial Audio Editor</title>
     <link rel="stylesheet" href="style.css">
-     <link rel="stylesheet" href="spatial.css">
+    <link rel="stylesheet" href="spatial.css">
 </head>
 <body>
     <div class="container">
         <h1>Spatial Audio Editor</h1>
-        <div id="stemControls">
-            <!-- Stem controls will be dynamically generated here -->
-        </div>
+        <div id="stemControls"></div>
         <div class="canvas-container">
-        <canvas id="spatialCanvas" width="400" height="400"></canvas>
+            <canvas id="spatialCanvas" width="400" height="400"></canvas>
         </div>
     </div>
+    <script src="https://cdnjs.cloudflare.com/ajax/libs/howler/2.2.4/howler.min.js"></script>
     <script src="spatial.js"></script>
 </body>
 </html>

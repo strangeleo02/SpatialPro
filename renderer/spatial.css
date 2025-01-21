@@ -28,4 +28,5 @@
  #spatialCanvas {
     border: 2px solid #444;
     cursor: grab;
+    background-color: #111;
  }
