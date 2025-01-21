@@ -1,0 +1,43 @@
+# Node modules
+node_modules/
+
+# Package lock file (if not needed for specific reasons, but should be commited in general)
+# package-lock.json
+
+# macOS system files
+.DS_Store
+._*
+
+# Electron / Build specific files
+*.exe
+*.dmg
+*.app
+out/
+
+# Temporary and cache files
+*.log
+*.tmp
+*.swp
+.cache/
+*.sqlite
+
+# IDE Specific files
+.idea/
+*.iml
+*.vscode/
+*.suo
+*.user
+*.userosscache
+*.sln
+*.csproj
+*.pdb
+
+# Log Files (Optional)
+*.log
+
+# Test output/coverage
+coverage/
+test-results/
+test/
+# Any other generated files you don't need to commit
+*.zip

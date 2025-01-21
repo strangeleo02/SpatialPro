@@ -1,0 +1,31 @@
+
+#stemControls {
+    display: flex;
+    flex-direction: column;
+   align-items: center;
+    margin-bottom: 20px;
+ }
+ 
+ .stem-control {
+     display: flex;
+     align-items: center;
+     justify-content: space-around;
+     padding: 10px;
+     border: 1px solid #444;
+     margin-bottom: 10px;
+   width: 500px;
+     border-radius: 8px;
+ }
+ 
+ .canvas-container {
+     display: flex;
+     justify-content: center;
+     align-items: center;
+     margin-top: 20px;
+ 
+ }
+ 
+ #spatialCanvas {
+    border: 2px solid #444;
+    cursor: grab;
+ }

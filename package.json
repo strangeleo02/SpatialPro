@@ -1,0 +1,23 @@
+{
+    "name": "demucs-spatial-audio",
+    "version": "1.0.0",
+    "description": "Spatial Audio with Demucs",
+    "main": "main.js",
+    "scripts": {
+      "start": "electron ."
+    },
+    "keywords": [
+      "electron",
+      "howler",
+      "demucs",
+      "spatial audio"
+    ],
+    "author": "Your Name",
+    "license": "MIT",
+    "devDependencies": {
+      "electron": "^28.2.1"
+    },
+    "dependencies": {
+      "howler": "^2.2.4"
+    }
+  }
