@@ -16,7 +16,8 @@ function createWindow() {
         icon: path.join(__dirname, 'assets/icon.png'),
     });
 
-    mainWindow.loadFile('renderer/index.html');
+    // Load index.html from the renderer directory
+    mainWindow.loadFile(path.join(__dirname, 'renderer', 'index.html'));
 
     mainWindow.on('closed', () => {
         mainWindow = null;
@@ -38,49 +39,70 @@ app.on('activate', () => {
 });
 
 ipcMain.handle('select-audio-file', async () => {
-    const { filePaths } = await dialog.showOpenDialog({
-        properties: ['openFile'],
-        filters: [{ name: 'Audio Files', extensions: ['mp3', 'wav', 'ogg'] }],
-    });
-    if (filePaths && filePaths.length > 0) {
-        return filePaths[0];
+    try {
+        const { filePaths, canceled } = await dialog.showOpenDialog({
+            properties: ['openFile'],
+            filters: [{ name: 'Audio Files', extensions: ['mp3', 'wav', 'ogg'] }],
+        });
+        return canceled ? null : filePaths[0];
+    } catch (error) {
+        console.error('Error selecting audio file:', error);
+        return null;
     }
-    return null;
 });
 
 ipcMain.handle('separate-stems', async (event, filePath) => {
-    const savePath = await dialog.showOpenDialog({
-        title: 'Select a directory to save stems',
-        properties: ['openDirectory', 'createDirectory']
-    });
-
-
-     if (savePath.canceled) {
-          return null;
-     }
-
-    const directory = savePath.filePaths[0];
-
-
-    return new Promise((resolve, reject) => {
-        const demucsProcess = spawn('demucs', ['-n', 'htdemucs', '-o', directory, filePath]);
-
-        let errorData = '';
-        demucsProcess.stderr.on('data', (data) => {
-            errorData += data.toString();
+    try {
+        const { filePaths, canceled } = await dialog.showOpenDialog({
+            title: 'Select a directory to save stems',
+            properties: ['openDirectory', 'createDirectory']
         });
 
-        demucsProcess.on('close', (code) => {
-            if (code === 0) {
-                const fileName = path.parse(filePath).name;
-                const stems = ['drums', 'bass', 'other', 'vocals'].map(stem =>
-                    path.join(directory, 'htdemucs', fileName, `${stem}.wav`)
-                );
-                resolve({ status: 'success', stems: stems });
-            } else {
-                reject(errorData);
-                //console.log(errorData)
-            }
+        if (canceled) {
+            return { status: 'cancelled' };
+        }
+
+        const directory = filePaths[0];
+        
+        return new Promise((resolve, reject) => {
+            const demucsProcess = spawn('demucs', ['-n', 'htdemucs', '-o', directory, filePath]);
+            
+            let progressData = '';
+            let errorData = '';
+
+            demucsProcess.stdout.on('data', (data) => {
+                progressData += data.toString();
+                mainWindow.webContents.send('separation-progress', progressData);
+            });
+
+            demucsProcess.stderr.on('data', (data) => {
+                errorData += data.toString();
+            });
+
+            demucsProcess.on('error', (error) => {
+                reject({ status: 'error', message: `Failed to start Demucs: ${error.message}` });
+            });
+
+            demucsProcess.on('close', (code) => {
+                if (code === 0) {
+                    const fileName = path.parse(filePath).name;
+                    const stems = ['drums', 'bass', 'other', 'vocals'].map(stem =>
+                        path.join(directory, 'htdemucs', fileName, `${stem}.wav`)
+                    );
+                    resolve({ status: 'success', stems: stems });
+                } else {
+                    reject({ 
+                        status: 'error', 
+                        message: `Process exited with code ${code}`,
+                        error: errorData
+                    });
+                }
+            });
         });
-    });
+    } catch (error) {
+        return { 
+            status: 'error', 
+            message: `Failed to separate stems: ${error.message}` 
+        };
+    }
 });
