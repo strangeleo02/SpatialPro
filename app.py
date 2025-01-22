@@ -42,7 +42,7 @@ def serve_static(filename):
     parts = filename.split('/')
     if len(parts) > 1:
         if parts[0] == 'stems':
-            directory = '/'.join(parts[0:2])
+            directory = (parts[0:2])
             file = '/'.join(parts[2:])
             return send_from_directory(directory, file)
     return send_from_directory('.', filename)
