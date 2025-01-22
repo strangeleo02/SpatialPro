@@ -43,16 +43,31 @@
     <h1>Audio Stem 3D Panning</h1>
     <input type="file" id="audio-upload" accept="audio/*">
     <button id="upload-audio">Upload and Process Audio</button>
+        <button id="play-pause-all">Play All</button>
     <div class="canvas-container" id="canvas-container"></div>
     <div class="controls-container" id="controls-container"></div>
 
     <script>
         const canvas = document.getElementById('canvas-container');
         const controlsContainer = document.getElementById('controls-container');
+         const playPauseAllButton = document.getElementById('play-pause-all');
 
         const colors = ['#4caf50', '#2196f3', '#ff5722', '#ffeb3b'];
         let stems = [];
         let sounds = [];
+        let isPlayingAll = false;
+
+
+        playPauseAllButton.addEventListener('click', () => {
+            if (isPlayingAll) {
+                sounds.forEach(sound => sound.pause());
+                playPauseAllButton.innerText = 'Play All';
+            } else {
+                 sounds.forEach(sound => sound.play());
+                 playPauseAllButton.innerText = 'Pause All';
+            }
+            isPlayingAll = !isPlayingAll;
+        });
 
         document.getElementById('upload-audio').addEventListener('click', async () => {
             const fileInput = document.getElementById('audio-upload');
@@ -71,8 +86,10 @@
                 });
 
                 if (response.ok) {
-                    stems = await response.json();
+                    const data = await response.json();
+                    stems = data.stems;
                     loadStems(stems);
+                    playPauseAllButton.disabled = false;
                 } else {
                     alert('Error processing audio.');
                 }
@@ -83,6 +100,9 @@
         });
 
         function loadStems(stems) {
+             playPauseAllButton.disabled = true;
+            sounds = [];
+            controlsContainer.innerHTML = '';
             stems.forEach((stem, index) => {
                 const sound = new Howl({
                     src: [stem],
@@ -101,28 +121,85 @@
             stemDiv.style.backgroundColor = colors[id - 1];
             canvas.appendChild(stemDiv);
 
-            stemDiv.addEventListener('click', () => {
-                sound.play();
-            });
 
             createStemControls(id, sound);
         }
 
-        function createStemControls(id, sound) {
+         function createStemControls(id, sound) {
             const controlDiv = document.createElement('div');
             controlDiv.innerHTML = `
                 <h3>Stem ${id}</h3>
                 <label>Volume:</label>
                 <input type="range" min="0" max="1" step="0.01" value="0.5">
+                <button>Mute</button>
             `;
 
             const volumeControl = controlDiv.querySelector('input');
+            const muteButton = controlDiv.querySelector('button');
+
             volumeControl.addEventListener('input', (e) => {
                 sound.volume(parseFloat(e.target.value));
             });
 
+           muteButton.addEventListener('click', () => {
+              if (sound.mute()) {
+                  sound.mute(false);
+                  muteButton.innerText = 'Mute';
+              } else {
+                  sound.mute(true);
+                  muteButton.innerText = 'Unmute';
+              }
+           });
+
+
             controlsContainer.appendChild(controlDiv);
+             const updateAudio = (id, x, y, elevation, volume) => {
+    const pan = (x - 200) / 200; // Normalize x to -1 to 1 for panning
+    const distance = 1 - (y / 400); // Distance factor for volume
+    const sound = howlerInstances[id];
+    sound.stereo(pan); // Set panning
+    sound.volume(volume * distance); // Set volume with distance factor
+};
         }
+
+        const updateAudio = (id, x, y, elevation, volume) => {
+            const pan = (x - 200) / 200; // Normalize x to -1 to 1 for panning
+            const distance = 1 - (y / 400); // Distance factor for volume
+            const sound = howlerInstances[id];
+            sound.stereo(pan); // Set panning
+            sound.volume(volume * distance); // Set volume with distance factor
+        };
+
+        // Example function to fetch and play stems
+        const playStems = async () => {
+            try {
+                const response = await fetch('/process-audio', {
+                    method: 'POST',
+                    body: new FormData(document.getElementById('audioForm'))
+                });
+                const data = await response.json();
+                if (data.error) {
+                    console.error(data.error);
+                    return;
+                }
+                const stems = data.stems;
+                stems.forEach((stem, index) => {
+                    const sound = new Howl({
+                        src: [stem],
+                        html5: true,
+                        onloaderror: (id, error) => {
+                            console.error(`Error loading ${stem}:`, error);
+                        }
+                    });
+                    howlerInstances[index] = sound;
+                    sound.play();
+                });
+            } catch (error) {
+                console.error('Error fetching stems:', error);
+            }
+        };
+
+        document.getElementById('playButton').addEventListener('click', playStems);
     </script>
 </body>
 </html>
