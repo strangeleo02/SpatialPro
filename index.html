@@ -1,0 +1,128 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>Audio Stem 3D Panning</title>
+    <script src="https://cdnjs.cloudflare.com/ajax/libs/howler/2.2.3/howler.min.js"></script>
+    <style>
+        body {
+            font-family: Arial, sans-serif;
+            display: flex;
+            flex-direction: column;
+            align-items: center;
+            margin: 0;
+            padding: 0;
+            background-color: #f3f4f6;
+        }
+        .controls-container {
+            margin-top: 20px;
+        }
+        .canvas-container {
+            position: relative;
+            width: 400px;
+            height: 400px;
+            border-radius: 50%;
+            background-color: #ddd;
+        }
+        .stem {
+            position: absolute;
+            width: 30px;
+            height: 30px;
+            border-radius: 50%;
+            cursor: grab;
+            display: flex;
+            justify-content: center;
+            align-items: center;
+            color: white;
+            font-weight: bold;
+        }
+    </style>
+</head>
+<body>
+    <h1>Audio Stem 3D Panning</h1>
+    <input type="file" id="audio-upload" accept="audio/*">
+    <button id="upload-audio">Upload and Process Audio</button>
+    <div class="canvas-container" id="canvas-container"></div>
+    <div class="controls-container" id="controls-container"></div>
+
+    <script>
+        const canvas = document.getElementById('canvas-container');
+        const controlsContainer = document.getElementById('controls-container');
+
+        const colors = ['#4caf50', '#2196f3', '#ff5722', '#ffeb3b'];
+        let stems = [];
+        let sounds = [];
+
+        document.getElementById('upload-audio').addEventListener('click', async () => {
+            const fileInput = document.getElementById('audio-upload');
+            if (fileInput.files.length === 0) {
+                alert('Please upload an audio file.');
+                return;
+            }
+
+            const formData = new FormData();
+            formData.append('audio', fileInput.files[0]);
+
+            try {
+                const response = await fetch('http://localhost:5000/process-audio', {
+                    method: 'POST',
+                    body: formData,
+                });
+
+                if (response.ok) {
+                    stems = await response.json();
+                    loadStems(stems);
+                } else {
+                    alert('Error processing audio.');
+                }
+            } catch (error) {
+                console.error('Error:', error);
+                alert('Error processing audio.');
+            }
+        });
+
+        function loadStems(stems) {
+            stems.forEach((stem, index) => {
+                const sound = new Howl({
+                    src: [stem],
+                    loop: true,
+                    volume: 0.5,
+                });
+                sounds.push(sound);
+                createStem(index + 1, sound);
+            });
+        }
+
+        function createStem(id, sound) {
+            const stemDiv = document.createElement('div');
+            stemDiv.classList.add('stem');
+            stemDiv.innerText = id;
+            stemDiv.style.backgroundColor = colors[id - 1];
+            canvas.appendChild(stemDiv);
+
+            stemDiv.addEventListener('click', () => {
+                sound.play();
+            });
+
+            createStemControls(id, sound);
+        }
+
+        function createStemControls(id, sound) {
+            const controlDiv = document.createElement('div');
+            controlDiv.innerHTML = `
+                <h3>Stem ${id}</h3>
+                <label>Volume:</label>
+                <input type="range" min="0" max="1" step="0.01" value="0.5">
+            `;
+
+            const volumeControl = controlDiv.querySelector('input');
+            volumeControl.addEventListener('input', (e) => {
+                sound.volume(parseFloat(e.target.value));
+            });
+
+            controlsContainer.appendChild(controlDiv);
+        }
+    </script>
+</body>
+</html>
