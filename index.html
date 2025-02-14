@@ -6,7 +6,8 @@
     <title>Audio Stem 3D Panning</title>
     <script src="https://cdnjs.cloudflare.com/ajax/libs/howler/2.2.3/howler.min.js"></script>
     <style>
-        body {
+        /* ... (Same CSS as before) ... */
+         body {
             font-family: Arial, sans-serif;
             display: flex;
             flex-direction: column;
@@ -59,6 +60,19 @@
             cursor: grabbing;
             box-shadow: 0 4px 8px rgba(0,0,0,0.3);
         }
+        #downloadLink {
+          margin-top: 15px;
+          display: inline-block;
+          padding: 10px 15px;
+          background-color: #007bff;
+          color: white;
+          text-decoration: none;
+          border-radius: 5px;
+        }
+
+        #downloadLink:hover {
+          background-color: #0056b3;
+        }
     </style>
 </head>
 <body>
@@ -66,6 +80,10 @@
     <input type="file" id="audio-upload" accept="audio/*">
     <button id="upload-audio">Upload and Process Audio</button>
     <button id="play-pause-all" disabled>Play All</button>
+    <button id="mix-audio" disabled>Mix and Download</button>
+    <a id="downloadLink" style="display: none;"></a>
+    <p id="audio-length"></p>
+
     <div class="canvas-container" id="canvas-container"></div>
     <div class="controls-container" id="controls-container"></div>
 
@@ -73,29 +91,117 @@
         const canvas = document.getElementById('canvas-container');
         const controlsContainer = document.getElementById('controls-container');
         const playPauseAllButton = document.getElementById('play-pause-all');
+        const mixAudioButton = document.getElementById('mix-audio');
+        const downloadLink = document.getElementById('downloadLink');
+        const audioLengthDisplay = document.getElementById('audio-length');
 
         const colors = ['#4caf50', '#2196f3', '#ff5722', '#ffeb3b'];
         let stems = [];
-        let sounds = [];
+        let sounds = [];  // Keep track of Howler sound objects
         let isPlayingAll = false;
+        let stemPositions = [];
 
-        playPauseAllButton.addEventListener('click', () => {
-            if (isPlayingAll) {
-                sounds.forEach(sound => sound.pause());
-                playPauseAllButton.innerText = 'Play All';
-            } else {
-                sounds.forEach(sound => sound.play());
-                playPauseAllButton.innerText = 'Pause All';
+      // --- Event Listener for Mix Audio Button ---
+        mixAudioButton.addEventListener('click', async () => {
+          if (sounds.length === 0) {
+            alert("No stems to mix.");
+            return;
+          }
+
+          // 1. Determine the longest stem duration
+          let maxDuration = 0;
+          const stemBuffers = []; // Store buffers here
+
+          for (const [index, stemURL] of stems.entries()) {
+            // Check if the corresponding sound is muted
+            if (sounds[index].mute()) {
+                console.log(`Stem ${index + 1} is muted, skipping.`);
+                continue; // Skip this stem if muted
             }
-            isPlayingAll = !isPlayingAll;
-        });
 
-        document.getElementById('upload-audio').addEventListener('click', async () => {
-            const fileInput = document.getElementById('audio-upload');
-            if (fileInput.files.length === 0) {
-                alert('Please upload an audio file.');
+              const response = await fetch(stemURL);
+              const arrayBuffer = await response.arrayBuffer();
+              // Use a temporary AudioContext to decode *just* to get duration
+              const tempAudioContext = new AudioContext(); // Use online context for decoding only
+              const audioBuffer = await tempAudioContext.decodeAudioData(arrayBuffer);
+              stemBuffers.push(audioBuffer); // Store the buffer
+              tempAudioContext.close();
+
+              maxDuration = Math.max(maxDuration, audioBuffer.duration);
+          }
+
+            if (stemBuffers.length === 0) {
+                alert("All stems are muted.  Nothing to mix.");
                 return;
             }
+
+
+          // 2. Create Offline Audio Context with the correct duration
+          const sampleRate = 44100; // or get from one of the buffers: stemBuffers[0].sampleRate
+          const audioContext = new OfflineAudioContext(2, Math.ceil(maxDuration * sampleRate), sampleRate);
+
+
+          // 3. Load and Connect Stems (using the stored buffers)
+          // We need to track the *original* index to get the correct position data
+          let renderedStemCount = 0;
+          for (const [index, audioBuffer] of stemBuffers.entries()) {
+
+             // Find the original index of this stem. We need a separate loop.
+            let originalIndex = 0;
+            let skippedCount = 0;
+            while(originalIndex < sounds.length){
+                if(sounds[originalIndex].mute()){
+                    skippedCount++;
+                } else {
+                    if(skippedCount + originalIndex - skippedCount === index) break;
+                }
+                originalIndex++;
+            }
+
+
+             const source = audioContext.createBufferSource();
+              source.buffer = audioBuffer;
+
+              const panner = audioContext.createPanner();
+              panner.panningModel = 'HRTF';
+              panner.distanceModel = 'inverse';
+              const { x, y, volume } = stemPositions[originalIndex]; // Use original index
+              panner.setPosition(x, y, -0.5);
+
+              const gainNode = audioContext.createGain();
+              gainNode.gain.value = volume;
+
+
+              source.connect(gainNode);
+              gainNode.connect(panner);
+              panner.connect(audioContext.destination);
+              source.start(0);
+
+              renderedStemCount++; // Increment after successfully adding a stem
+          }
+
+
+
+          // 4. Render to Buffer (Rest of the code)
+          const renderedBuffer = await audioContext.startRendering();
+          const wavDataView = bufferToWave(renderedBuffer, renderedBuffer.length);
+          const blob = new Blob([wavDataView], { type: 'audio/wav' });
+          const url = URL.createObjectURL(blob);
+
+          downloadLink.href = url;
+          downloadLink.download = 'mixed_audio.wav';
+          downloadLink.innerText = 'Download Mixed Audio';
+          downloadLink.style.display = 'inline-block';
+        });
+
+
+
+       document.getElementById('upload-audio').addEventListener('click', async () => {
+              const fileInput = document.getElementById('audio-upload');
+              if (fileInput.files.length === 0) {
+                  alert('Please upload an audio file.');
+                  return;
+              }
 
             const formData = new FormData();
             formData.append('audio', fileInput.files[0]);
@@ -109,8 +215,22 @@
                 if (response.ok) {
                     const data = await response.json();
                     stems = data.stems;
+
+                    if (stems.length > 0) {
+                        const tempAudioContext = new AudioContext();
+                        const stemResponse = await fetch(stems[0]);
+                        const stemArrayBuffer = await stemResponse.arrayBuffer();
+                        const stemAudioBuffer = await tempAudioContext.decodeAudioData(stemArrayBuffer);
+                        tempAudioContext.close();
+                        const durationInSeconds = stemAudioBuffer.duration;
+                        audioLengthDisplay.textContent = `Audio Length: ${durationInSeconds.toFixed(2)} seconds`;
+                    }
+
+
                     loadStems(stems);
                     playPauseAllButton.disabled = false;
+                    mixAudioButton.disabled = false;
+                    downloadLink.style.display = 'none';
                 } else {
                     alert('Error processing audio.');
                 }
@@ -118,6 +238,17 @@
                 console.error('Error:', error);
                 alert('Error processing audio.');
             }
+        });
+
+        playPauseAllButton.addEventListener('click', () => {
+            if (isPlayingAll) {
+                sounds.forEach(sound => sound.pause());
+                playPauseAllButton.innerText = 'Play All';
+            } else {
+                sounds.forEach(sound => sound.play());
+                playPauseAllButton.innerText = 'Pause All';
+            }
+            isPlayingAll = !isPlayingAll;
         });
 
         let isDragging = false;
@@ -128,16 +259,20 @@
 
         function loadStems(stems) {
             playPauseAllButton.disabled = true;
-            sounds = [];
+            mixAudioButton.disabled = true;
+            downloadLink.style.display = 'none';
+            sounds = []; // Clear previous sounds
             controlsContainer.innerHTML = '';
-            canvas.innerHTML = '';  // Clear existing stems
-            
+            canvas.innerHTML = '';
+            stemPositions = [];
+
             stems.forEach((stem, index) => {
                 const sound = new Howl({
                     src: [stem],
                     loop: true,
                     volume: 0.5,
-                    spatial: true,  // Enable spatial audio
+                    html5: true, // Important for accurate mute state
+                    spatial: true,
                     pannerAttr: {
                         panningModel: 'HRTF',
                         distanceModel: 'inverse',
@@ -149,10 +284,11 @@
                         coneOuterGain: 0
                     }
                 });
-                sounds.push(sound);
+                sounds.push(sound); // Store the Howler object
                 createStem(index + 1, sound);
             });
-            playPauseAllButton.disabled = false;
+             playPauseAllButton.disabled = false;
+            mixAudioButton.disabled = false;
         }
 
         function createStem(id, sound) {
@@ -160,74 +296,70 @@
             stemDiv.classList.add('stem');
             stemDiv.innerText = id;
             stemDiv.style.backgroundColor = colors[id - 1];
-            
-            // Position stem initially at a random angle around the circle
+
             const angle = (id - 1) * (360 / stems.length);
-            const radius = canvas.offsetWidth * 0.35; // 35% of canvas width
+            const radius = canvas.offsetWidth * 0.35;
             const x = centerX + radius * Math.cos(angle * Math.PI / 180);
             const y = centerY + radius * Math.sin(angle * Math.PI / 180);
-            
+
             positionStemElement(stemDiv, x, y);
-            updateSpatialAudio(sound, x, y);
-            
-            // Add drag functionality
+            const initialVolume = 0.5;
+
+            stemPositions.push({ x: (x - centerX) / (canvas.offsetWidth / 2), y: (y - centerY) / (canvas.offsetHeight / 2), volume: initialVolume });
+            updateSpatialAudio(sound, x, y, initialVolume);
+
             stemDiv.addEventListener('mousedown', (e) => {
                 isDragging = true;
                 currentStem = {
                     element: stemDiv,
                     sound: sound,
+                    index: id - 1,
                     offsetX: e.clientX - stemDiv.offsetLeft,
                     offsetY: e.clientY - stemDiv.offsetTop
                 };
             });
-            
+
             canvas.appendChild(stemDiv);
             createStemControls(id, sound);
         }
 
         function positionStemElement(element, x, y) {
-            // Adjust position to account for stem size
-            const stemHalfSize = 15; // half of stem width/height
+            const stemHalfSize = 15;
             element.style.left = (x - stemHalfSize) + 'px';
             element.style.top = (y - stemHalfSize) + 'px';
         }
 
-        function updateSpatialAudio(sound, x, y) {
-            // Convert position to spatial audio coordinates (-1 to 1)
+        function updateSpatialAudio(sound, x, y, volume) {
             const normalizedX = (x - centerX) / (canvas.offsetWidth / 2);
             const normalizedY = (y - centerY) / (canvas.offsetHeight / 2);
-            
-            // Calculate distance from center (0-1)
             const distance = Math.sqrt(normalizedX * normalizedX + normalizedY * normalizedY);
-            
-            // Update sound position
+            const calculatedVolume = volume !== undefined ? volume : Math.max(0.1, 1 - (distance * 0.5));
             sound.pos(normalizedX, normalizedY, -0.5);
-            
-            // Adjust volume based on distance from center
-            const volume = Math.max(0.1, 1 - (distance * 0.5));
-            sound.volume(volume);
+            sound.volume(calculatedVolume);
+
+             if (currentStem) {
+                stemPositions[currentStem.index] = { x: normalizedX, y: normalizedY, volume: calculatedVolume };
+            }
         }
 
-        // Add these event listeners to handle dragging
         document.addEventListener('mousemove', (e) => {
             if (!isDragging || !currentStem) return;
-            
+
             const canvasRect = canvas.getBoundingClientRect();
             let x = e.clientX - canvasRect.left;
             let y = e.clientY - canvasRect.top;
-            
-            // Constrain to circle
+
             const dx = x - centerX;
             const dy = y - centerY;
             const distance = Math.sqrt(dx * dx + dy * dy);
             const maxRadius = canvas.offsetWidth * 0.35;
-            
+
             if (distance > maxRadius) {
                 const angle = Math.atan2(dy, dx);
                 x = centerX + maxRadius * Math.cos(angle);
                 y = centerY + maxRadius * Math.sin(angle);
             }
-            
+
             positionStemElement(currentStem.element, x, y);
             updateSpatialAudio(currentStem.sound, x, y);
         });
@@ -249,8 +381,15 @@
             const volumeControl = controlDiv.querySelector('input');
             const muteButton = controlDiv.querySelector('button');
 
+            volumeControl.value = sounds[id - 1].volume();
+
             volumeControl.addEventListener('input', (e) => {
-                sound.volume(parseFloat(e.target.value));
+                const newVolume = parseFloat(e.target.value);
+                sound.volume(newVolume);
+
+                if (stemPositions[id - 1]) {
+                    stemPositions[id - 1].volume = newVolume;
+                }
             });
 
             muteButton.addEventListener('click', () => {
@@ -265,6 +404,64 @@
 
             controlsContainer.appendChild(controlDiv);
         }
+
+        // Helper function to convert AudioBuffer to WAV DataView (same as before)
+        function bufferToWave(abuffer, len) {
+            const numOfChan = abuffer.numberOfChannels;
+            const length = len * numOfChan * 2 + 44;
+            const buffer = new ArrayBuffer(length);
+            const view = new DataView(buffer);
+            const channels = [];
+            let i;
+            let sample;
+            let offset = 0;
+            let pos = 0;
+
+            // write WAVE header
+            setUint32(0x46464952);                         // "RIFF"
+            setUint32(length - 8);                         // file length - 8
+            setUint32(0x45564157);                         // "WAVE"
+
+            setUint32(0x20746d66);                         // "fmt " chunk
+            setUint32(16);                                 // length = 16
+            setUint16(1);                                  // PCM (uncompressed)
+            setUint16(numOfChan);
+            setUint32(abuffer.sampleRate);
+            setUint32(abuffer.sampleRate * 2 * numOfChan); // avg. bytes/sec
+            setUint16(numOfChan * 2);                      // block-align
+            setUint16(16);                                 // 16-bit (hardcoded in this example)
+
+            setUint32(0x61746164);                         // "data" - chunk
+            setUint32(length - pos - 4);                   // chunk length
+
+            // write interleaved data
+            for(i = 0; i < abuffer.numberOfChannels; i++){
+              channels.push(abuffer.getChannelData(i));
+            }
+
+            while(pos < length) {
+              for(i = 0; i < numOfChan; i++) {             // interleave channels
+                sample = Math.max(-1, Math.min(1, channels[i][offset])); // clamp
+                sample = (0.5 + sample < 0 ? sample * 0x8000 : sample * 0x7FFF)|0; // scale to 16-bit signed int
+                view.setInt16(pos, sample, true);          // write 16-bit sample
+                pos += 2;
+              }
+              offset++                                     // next source sample
+            }
+
+            return view;
+
+            function setUint16(data) {
+              view.setUint16(pos, data, true);
+              pos += 2;
+            }
+
+            function setUint32(data) {
+              view.setUint32(pos, data, true);
+              pos += 4;
+            }
+        }
+
     </script>
 </body>
-</html>
+</html> 
